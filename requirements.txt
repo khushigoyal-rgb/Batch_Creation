@@ -1,22 +1,41 @@
 # ------------------------------------------------------------------------------
-# Pinned runtime for the churn pre-closure SCORING pipeline
+# PRODUCTION-MATCHED runtime for the churn pre-closure scoring pipeline
 #   feat_crn.ipynb  (bureau)  -> loads model.pkl
 #   feat_crn2.ipynb (query)   -> loads model_cust_query.pkl
-#   feat_crn_ensemble.ipynb   -> numpy + pandas only (no xgboost; blends the two score CSVs)
+#   feat_crn_ensemble.ipynb   -> numpy + pandas only (blends the two score CSVs)
 #
-# WHY THESE PINS:
-# - The handover pinned NO environment (no requirements.txt / env.yml anywhere).
-# - Both trained models embed their build version in the serialized Booster: xgboost 1.7.4.
-#   Load them under the SAME xgboost to reproduce the handover scores exactly. A pickled
-#   Booster can load across versions but is not guaranteed bit-identical and warns.
-# - The xgboost 1.7.4 wheel is built against the numpy 1.x ABI, so numpy MUST be < 2.0.
-# - The notebooks use pd.set_option('future.infer_string', ...) which needs pandas >= 2.1.
+# These are the EXACT versions the production image runs (per the handover) — we abide by them.
+#
+# NOTE ON XGBOOST: the models were TRAINED/serialized with xgboost 1.7.4 (version embedded in the
+# Booster), but production LOADS and scores them with xgboost 2.1.1. XGBoost loads older model
+# formats and prediction from a fixed Booster is deterministic, so this is expected and correct.
+#
+# PYTHON: use 3.11 or 3.12 (these pins support it). Do NOT use Python 3.14 — pandas
+# groupby.cumcount() crashes there (observed in the on-us step). Recommended: 3.12.
+#   conda create -n churn python=3.12 -y && conda activate churn && pip install -r requirements.txt
 # ------------------------------------------------------------------------------
-xgboost==1.7.4
-numpy>=1.23,<2.0
-pandas>=2.1,<2.3
-psycopg2-binary>=2.9,<3.0
-python-dateutil>=2.8
-tqdm>=4.0
-matplotlib>=3.5,<4.0
-nbformat>=5.0        # notebook validation only (not imported by the pipeline at runtime)
+
+# ---- production image (exact) ----
+betacal==1.1.0
+boto3==1.40.28
+joblib==1.5.1
+numpy==2.2.6
+numpy-financial==1.0.0
+openpyxl==3.1.5
+pandas==2.3.0
+psycopg2-binary==2.9.7
+PyAthena==3.9.0
+pyjanitor==0.28.1
+python-dateutil==2.9.0.post0
+python-dotenv==1.1.0
+scikit-learn==1.6.1
+scipy==1.15.3
+statsmodels==0.14.4
+tqdm==4.67.1
+xgboost==2.1.1
+xmltodict==1.0.2
+
+# ---- local-only extras (NOT in the production image; needed for the local notebooks/tools) ----
+matplotlib>=3.5        # feat_crn Section 11 EDA histogram (optional)
+pyarrow>=12.0          # compare_vs_handover.py --features (reads the handover parquet)
+nbformat>=5.0          # notebook validation only
