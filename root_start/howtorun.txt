@@ -1,0 +1,18 @@
+conda create -n churn python=3.12 -y
+conda activate churn
+pip install -r /Users/khushi.goyal/Desktop/Shivam/root_start/requirements.txt
+conda install -c conda-forge llvm-openmp -y
+pip install ipykernel
+python -m ipykernel install --user --name churn-preclosure --display-name "churn-preclosure (prod: py3.12, xgb2.1.1)"
+
+
+
+
+
+python -c "import sys, xgboost, pandas, numpy; print(sys.version.split()[0], xgboost.__version__, pandas.__version__, numpy.__version__)"
+# expect: 3.11.x  1.7.4  2.2.x  1.26.x
+
+
+
+
+python compare_vs_handover.py --cohort jan_26 --features

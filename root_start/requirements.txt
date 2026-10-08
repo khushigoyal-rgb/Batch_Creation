@@ -1,0 +1,44 @@
+# ------------------------------------------------------------------------------
+# PRODUCTION-MATCHED runtime for the churn pre-closure scoring pipeline
+#   feat_crn.ipynb  (bureau)  -> loads model.pkl
+#   feat_crn2.ipynb (query)   -> loads model_cust_query.pkl
+#   feat_crn_ensemble.ipynb   -> numpy + pandas only (blends the two score CSVs)
+#
+# These are the EXACT versions the production image runs (per the handover) — we abide by them.
+#
+# NOTE ON XGBOOST: the models were TRAINED/serialized with xgboost 1.7.4 (version embedded in the
+# Booster), but production LOADS and scores them with xgboost 2.1.1. XGBoost loads older model
+# formats and prediction from a fixed Booster is deterministic, so this is expected and correct.
+#
+# PYTHON: use 3.11. psycopg2-binary==2.9.7 ships wheels only through cp311 (no 3.12 wheel ->
+# pip would try to compile from source and fail without pg_config). That pin also implies the
+# production image itself runs Python <= 3.11. Do NOT use Python 3.14 (pandas groupby.cumcount()
+# crashes there in the on-us step).
+#   conda create -n churn python=3.11 -y && conda activate churn && pip install -r requirements.txt
+# ------------------------------------------------------------------------------
+
+# ---- production image (exact) ----
+betacal==1.1.0
+boto3==1.40.28
+joblib==1.5.1
+numpy==2.2.6
+numpy-financial==1.0.0
+openpyxl==3.1.5
+pandas==2.3.0
+psycopg2-binary==2.9.7
+PyAthena==3.9.0
+pyjanitor==0.28.1
+python-dateutil==2.9.0.post0
+python-dotenv==1.1.0
+scikit-learn==1.6.1
+scipy==1.15.3
+statsmodels==0.14.4
+tqdm==4.67.1
+xgboost==2.1.1
+xmltodict==1.0.2
+redshift-connector>=2.1.0   # native Redshift driver used by Stage 0-A (fetch_dataframe); confirm exact prod pin
+pyarrow>=16.0               # parquet I/O (feature frames / handover compare); compatible with pandas 2.3 + numpy 2.2
+
+# ---- local-only extras (NOT in the production image; needed for the local notebooks/tools) ----
+matplotlib>=3.5        # feat_crn Section 11 EDA histogram (optional)
+nbformat>=5.0          # notebook validation only
