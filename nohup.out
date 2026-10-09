@@ -1,0 +1,50 @@
+[W 2026-10-08 13:23:51.242 ServerApp] A `_jupyter_server_extension_points` function was not found in jupyter_lsp. Instead, a `_jupyter_server_extension_paths` function was found and will be used for now. This function name will be deprecated in future releases of Jupyter Server.
+[W 2026-10-08 13:23:51.587 ServerApp] A `_jupyter_server_extension_points` function was not found in notebook_shim. Instead, a `_jupyter_server_extension_paths` function was found and will be used for now. This function name will be deprecated in future releases of Jupyter Server.
+[I 2026-10-08 13:23:53.151 ServerApp] Extension package panel.io.jupyter_server_extension took 1.5621s to import
+[I 2026-10-08 13:23:53.151 ServerApp] jupyter_lsp | extension was successfully linked.
+[I 2026-10-08 13:23:53.156 ServerApp] jupyter_server_terminals | extension was successfully linked.
+[I 2026-10-08 13:23:53.163 ServerApp] jupyterlab | extension was successfully linked.
+[I 2026-10-08 13:23:53.168 ServerApp] notebook | extension was successfully linked.
+[I 2026-10-08 13:23:53.484 ServerApp] notebook_shim | extension was successfully linked.
+[I 2026-10-08 13:23:53.484 ServerApp] panel.io.jupyter_server_extension | extension was successfully linked.
+[I 2026-10-08 13:23:53.524 ServerApp] notebook_shim | extension was successfully loaded.
+[I 2026-10-08 13:23:53.527 ServerApp] jupyter_lsp | extension was successfully loaded.
+[I 2026-10-08 13:23:53.528 ServerApp] jupyter_server_terminals | extension was successfully loaded.
+[I 2026-10-08 13:23:53.530 LabApp] JupyterLab extension loaded from /home/ec2-user/anaconda3/lib/python3.12/site-packages/jupyterlab
+[I 2026-10-08 13:23:53.530 LabApp] JupyterLab application directory is /home/ec2-user/anaconda3/share/jupyter/lab
+[I 2026-10-08 13:23:53.531 LabApp] Extension Manager is 'pypi'.
+[I 2026-10-08 13:23:53.579 ServerApp] jupyterlab | extension was successfully loaded.
+[I 2026-10-08 13:23:53.584 ServerApp] notebook | extension was successfully loaded.
+[I 2026-10-08 13:23:53.585 ServerApp] panel.io.jupyter_server_extension | extension was successfully loaded.
+[I 2026-10-08 13:23:53.586 ServerApp] Serving notebooks from local directory: /home/ec2-user/Khushi
+[I 2026-10-08 13:23:53.586 ServerApp] Jupyter Server 2.14.1 is running at:
+[I 2026-10-08 13:23:53.586 ServerApp] http://localhost:9094/tree?token=910d9669a367badbbc2ad6fe9b5712e413221cef95d24f3b
+[I 2026-10-08 13:23:53.586 ServerApp]     http://127.0.0.1:9094/tree?token=910d9669a367badbbc2ad6fe9b5712e413221cef95d24f3b
+[I 2026-10-08 13:23:53.586 ServerApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[C 2026-10-08 13:23:53.589 ServerApp] 
+    
+    To access the server, open this file in a browser:
+        file:///home/ec2-user/.local/share/jupyter/runtime/jpserver-1854854-open.html
+    Or copy and paste one of these URLs:
+        http://localhost:9094/tree?token=910d9669a367badbbc2ad6fe9b5712e413221cef95d24f3b
+        http://127.0.0.1:9094/tree?token=910d9669a367badbbc2ad6fe9b5712e413221cef95d24f3b
+[I 2026-10-08 13:23:53.641 ServerApp] Skipped non-installed server(s): bash-language-server, dockerfile-language-server-nodejs, javascript-typescript-langserver, jedi-language-server, julia-language-server, pyright, python-language-server, r-languageserver, sql-language-server, texlab, typescript-language-server, unified-language-server, vscode-css-languageserver-bin, vscode-html-languageserver-bin, vscode-json-languageserver-bin, yaml-language-server
+[I 2026-10-08 13:25:01.208 ServerApp] 302 GET /?token=[secret] (@127.0.0.1) 0.59ms
+[W 2026-10-08 13:25:13.805 ServerApp] Notebook root_start/feat_crn.ipynb is not trusted
+[W 2026-10-08 13:25:15.064 ServerApp] Notebook root_start/feat_crn.ipynb is not trusted
+[I 2026-10-08 13:25:15.517 ServerApp] Kernel started: 2555cbeb-8f50-4bc4-a506-28b0976f4bb1
+[IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
+[I 2026-10-08 13:25:16.258 ServerApp] Adapting from protocol version 5.3 (kernel 2555cbeb-8f50-4bc4-a506-28b0976f4bb1) to 5.4 (client).
+[I 2026-10-08 13:25:16.262 ServerApp] Connecting to kernel 2555cbeb-8f50-4bc4-a506-28b0976f4bb1.
+[I 2026-10-08 13:25:16.325 ServerApp] Adapting from protocol version 5.3 (kernel 2555cbeb-8f50-4bc4-a506-28b0976f4bb1) to 5.4 (client).
+[I 2026-10-08 13:25:16.328 ServerApp] Connecting to kernel 2555cbeb-8f50-4bc4-a506-28b0976f4bb1.
+[I 2026-10-08 13:25:16.370 ServerApp] Adapting from protocol version 5.3 (kernel 2555cbeb-8f50-4bc4-a506-28b0976f4bb1) to 5.4 (client).
+[I 2026-10-08 13:25:16.381 ServerApp] Connecting to kernel 2555cbeb-8f50-4bc4-a506-28b0976f4bb1.
+[I 2026-10-08 13:25:24.077 ServerApp] Adapting from protocol version 5.3 (kernel 2555cbeb-8f50-4bc4-a506-28b0976f4bb1) to 5.4 (client).
+[I 2026-10-08 13:25:24.078 ServerApp] Connecting to kernel 2555cbeb-8f50-4bc4-a506-28b0976f4bb1.
+[I 2026-10-08 13:25:44.802 ServerApp] Starting buffering for 2555cbeb-8f50-4bc4-a506-28b0976f4bb1:5c84790c-dcb1-4c46-868c-878570481398
+[I 2026-10-08 13:25:44.854 ServerApp] Adapting from protocol version 5.3 (kernel 2555cbeb-8f50-4bc4-a506-28b0976f4bb1) to 5.4 (client).
+[I 2026-10-08 13:25:44.855 ServerApp] Connecting to kernel 2555cbeb-8f50-4bc4-a506-28b0976f4bb1.
+[I 2026-10-08 13:25:44.855 ServerApp] Restoring connection for 2555cbeb-8f50-4bc4-a506-28b0976f4bb1:5c84790c-dcb1-4c46-868c-878570481398
+[W 2026-10-08 13:27:14.857 ServerApp] WebSocket ping timeout after 90002 ms.
+[I 2026-10-08 13:27:19.860 ServerApp] Starting buffering for 2555cbeb-8f50-4bc4-a506-28b0976f4bb1:5c84790c-dcb1-4c46-868c-878570481398
