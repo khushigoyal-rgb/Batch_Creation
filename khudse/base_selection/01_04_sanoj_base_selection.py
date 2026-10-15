@@ -2,17 +2,13 @@ import pandas as pd
 import numpy as np
 from dateutil.relativedelta import relativedelta
 from tqdm import tqdm
-import datetime, timedelta
-import time 
+from datetime import datetime, timedelta
+import time
 import os
 from io import StringIO
 import warnings
 warnings.filterwarnings("ignore")
 
-
-
-
-from tqdm import tqdm
 import psycopg2
 import boto3
 import io
@@ -48,10 +44,15 @@ _ms, _yy = COHORT.split("_")
 cohort_month  = datetime(2000 + int(_yy), _MON[_ms[:3].lower()], 1)
 COHORT_YEAR_MONTH    = cohort_month.strftime("%Y-%m")
 
-current_month = datetime.datetime.today().strftime('%b_%Y')
-print("Current Month:",current_month)
-previous_month = (datetime.datetime.today() - relativedelta(months=1)).strftime('%b_%Y')
-print("Previous Month:",previous_month)
+# Cohort month window (1st -> last day of the cohort month) used to seed the
+# eligible loan universe: any loan with at least one EMI due in the cohort month.
+cohort_month_start = cohort_month.strftime("%Y-%m-%d")
+cohort_month_end   = (cohort_month + relativedelta(months=1) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+current_month = datetime.today().strftime('%b_%Y')
+print("Current Month:", current_month)
+previous_month = (datetime.today() - relativedelta(months=1)).strftime('%b_%Y')
+print("Previous Month:", previous_month)
 
 new_query = f"""select 
                     ps.loan_id as opportunity__c,
@@ -66,7 +67,7 @@ new_query = f"""select
                 FROM 
                     lms.fact_repayment_schedule as ps
                     join lms.dim_loan o on o.loan_id = ps.loan_id
-                    where ps.emi_due_date BETWEEN '{start_date}' AND '{end_date}'
+                    where ps.emi_due_date BETWEEN '{cohort_month_start}' AND '{cohort_month_end}'
                     AND (ps.ps_id not in (select distinct record_id from lms.dim_purge_records where object_name = 'Payment Schedule'))
                     and o.product_type='Personal Loan'
             """
@@ -83,9 +84,21 @@ print("df_opp_2.shape: ",df_opp_2.shape)
 df_opp_2.to_csv('../Data/opp_ids_between_2025-05-21_till_2026-03-21.csv',index= False)
 
 
-today=datetime.today()
+today = datetime.today()
 list_1 = [6,8,9,10,12,13,14,15,16,17,18]
 print(today)
+
+# Date bounds computed up front so they can be pushed down into SQL.
+# previous month's 20th -> upper bound for opportunity closedate
+previous_month_date = today.date().replace(day=20) - relativedelta(months=1)
+previous_month_str = previous_month_date.strftime('%Y-%m-%d')
+# today -> upper bound for EMI due dates
+today_str = today.strftime('%Y-%m-%d')
+
+# Stages excluded from the opportunity base
+EXCLUDED_STAGES = ['Canceled', 'Rejected', 'Disbursement Approved',
+                   'Restructured', 'InitialApproach', 'Credit Approved']
+_excluded_stages_sql = ','.join([f"'{s}'" for s in EXCLUDED_STAGES])
 
 df_ids = df_opp_2.copy()
 opp_unique_ids = df_ids['opportunity__c'].tolist()
@@ -111,6 +124,8 @@ for id_subset in split(opp_unique_ids,100000):
         O.sanction_amount as sanction_amount__c
     FROM dwh_dmi.lms.dim_loan O
     WHERE O.loan_id in  ({','.join([f"'{x}'" for x in id_subset])})
+        AND O.stage not in ({_excluded_stages_sql})
+        AND O.closed_date <= '{previous_month_str}'
     """
     df_id_temp = pd.read_sql(qry_opp_data, conn)
     opp_df = pd.concat([df_id_temp,opp_df])     
@@ -132,6 +147,7 @@ for id_subset in split(opp_unique_ids,100000):
                 FROM 
                     dwh_dmi.lms.fact_repayment_schedule as ps
                     where loan_id in ({','.join([f"'{x}'" for x in id_subset])})
+                    AND ps.emi_due_date < '{today_str}'
                     AND (ps.ps_id not in (select distinct record_id from lms.dim_purge_records where object_name = 'Payment Schedule'))
                 """
     df_id_temp = pd.read_sql(qry_payment_data, conn)
@@ -149,35 +165,22 @@ print("unique opp_ids in df_payments :", df_payments['opportunity__c'].nunique()
 print("unique opp_ids in df_oppp :", df['opp_id'].nunique())
 
 
-df = df[df['opp_id'].isin(opp_unique_ids)]
-df_payments = df_payments[df_payments['opportunity__c'].isin(opp_unique_ids)]
-print("opp_df shape after : ", df.shape)
-print("pay_df shape after : ", df_payments.shape)
+# NOTE: stagename exclusion, closedate <= previous month 20th, and
+# emi_due_date < today are now applied directly in the SQL queries above.
 
-
-current_date = today.date() 
-previous_month_date = current_date.replace(day=20) - relativedelta(months=1)
+current_date = today.date()
 previous_month_timestamp = pd.Timestamp(previous_month_date)
 current_date_timestamp = pd.Timestamp(current_date)
 
-# fill payment_received_date__c null values and create cols list
-today_str=today.strftime('%Y-%m-%d')
-# to select ids whoes closedate was before previous_month_date
-print('previous_month_date',previous_month_date)
-# select all-due dates before current_date 
-print('current_date_timestamp',current_date_timestamp)
+print('previous_month_date', previous_month_date)
+print('current_date_timestamp', current_date_timestamp)
 
-df[df['stagename'].isin(['Canceled', 'Rejected', 'Disbursement Approved', 'Restructured', 'InitialApproach', 'Credit Approved'])]
+# Type conversions still required for the delinquency / FIFO logic below.
 df['createddate_opp'] = pd.to_datetime(df['createddate_opp'])
-df['closedate'] = pd.to_datetime(df['closedate'])
-df = df[~df['stagename'].isin(['Canceled', 'Rejected', 'Disbursement Approved', 'Restructured', 'InitialApproach', 'Credit Approved'])]
-print("opp_df shape after stagename filter: ", df.shape)
-
-df['maturity_date__c'] = pd.to_datetime(df['maturity_date__c'],format='%Y-%m-%d')
-df['actual_maturity_date__c'] = pd.to_datetime(df['actual_maturity_date__c'],format='%Y-%m-%d')
-df['closedate'] = pd.to_datetime(df['closedate'],format='%Y-%m-%d')
-df = df[df['closedate'] <= previous_month_timestamp]
-print('max_opp_close_date',df['closedate'].max())
+df['maturity_date__c'] = pd.to_datetime(df['maturity_date__c'], format='%Y-%m-%d')
+df['actual_maturity_date__c'] = pd.to_datetime(df['actual_maturity_date__c'], format='%Y-%m-%d')
+df['closedate'] = pd.to_datetime(df['closedate'], format='%Y-%m-%d')
+print('max_opp_close_date', df['closedate'].max())
 print('Maximum opportunity closedate should not be more than of previous month 20th ')
 
 
@@ -185,7 +188,6 @@ df_opps_payments = pd.merge(df_payments, df, left_on = 'opportunity__c', right_o
 df_opps_payments['date__c'] = pd.to_datetime(df_opps_payments['date__c'])
 df_opps_payments.sort_values(by = ['opp_id', 'date__c'], inplace = True)
 df_opps_payments['closedate'] = pd.to_datetime(df_opps_payments['closedate'])
-df_opps_payments = df_opps_payments[df_opps_payments['date__c'] < current_date_timestamp]
 
 print('max_date__c',df_opps_payments['date__c'].max())
 print('Maximum due date(date__c) should not more than today date')
@@ -249,7 +251,7 @@ df_final_filt_2 = df_final_filt.copy()
 
 
 ##PRE CLOSED OPPS
-def pre_closed_opps ():
+def pre_closed_opps():
     df_opps = opp_df.copy()
     df_matured = df_opps[df_opps['stagename'].isin(['Matured Closed'])]#,'Matured'
     df_matured_2 = df_matured[['opp_id','closedate','stagename',
@@ -284,45 +286,58 @@ def pre_closed_opps ():
     # Calculate the rate
     summary_df['pre_close_rate'] = (summary_df['pre_closed_count'] / summary_df['total_customers']) * 100
 
-def partner_wise_distr ():   
-    df_partner = df_ids[df_ids['opportunity__c'].isin(df_complete_base['opp_id'].tolist())]
-    list_of_partners = ['GooglePay','X-Sell','DMID2C','Samsung','AirtelFinance','SuperMoney','Oppo','Finnable','Airtel','Paisabazaar','MoneyView','Billcut','Niro'] 
-    df_ids.rename(columns = {'opportunity__c':'opp_id'},inplace = True)
-    df_complete_base_with_partner = pd.merge(df_complete_base,df_ids[['opp_id','partner_name']],on = 'opp_id')
+    return df_complete_base, summary_df
+
+
+def partner_wise_distr(df_complete_base):
+    list_of_partners = ['GooglePay', 'X-Sell', 'DMID2C', 'Samsung', 'AirtelFinance',
+                        'SuperMoney', 'Oppo', 'Finnable', 'Airtel', 'Paisabazaar',
+                        'MoneyView', 'Billcut', 'Niro']
+    df_ids.rename(columns={'opportunity__c': 'opp_id'}, inplace=True)
+    df_complete_base_with_partner = pd.merge(
+        df_complete_base, df_ids[['opp_id', 'partner_name']], on='opp_id')
     print("df_complete_base.shape :", df_complete_base.shape)
-    df_complete_base_with_partner_filtered= df_complete_base_with_partner[df_complete_base_with_partner['partner_name'].isin(list_of_partners)]
-    print("df_complete_base_with_partner_filtered.shape :",df_complete_base_with_partner_filtered.shape)
+    df_complete_base_with_partner_filtered = df_complete_base_with_partner[
+        df_complete_base_with_partner['partner_name'].isin(list_of_partners)]
+    print("df_complete_base_with_partner_filtered.shape :", df_complete_base_with_partner_filtered.shape)
     print("checking partners counts :", df_complete_base_with_partner_filtered['partner_name'].value_counts())
-    df_complete_base_with_partner_filtered.to_csv('../Data/df_complete_base_with_partner_filtered.csv',index = False)
-    print("df_complete_base_with_partner_filtered['pre_closed_flag'].value_counts() :", df_complete_base_with_partner_filtered['pre_closed_flag'].value_counts())
+    df_complete_base_with_partner_filtered.to_csv(
+        '../Data/df_complete_base_with_partner_filtered.csv', index=False)
+    print("df_complete_base_with_partner_filtered['pre_closed_flag'].value_counts() :",
+          df_complete_base_with_partner_filtered['pre_closed_flag'].value_counts())
+
+    return df_complete_base_with_partner_filtered
 
 
-
-def cohort_final_base_selection ():
-    df_{"COHORT"} = df_complete_base_with_partner_filtered[df_complete_base_with_partner_filtered['year_month']=='COHORT_YEAR_MONTH']
-    print("df_cohort's shape: ",df_{"COHORT"}.shape)
-    list_opp = df_complete_base_with_partner_filtered[df_complete_base_with_partner_filtered['year_month'].isin(['COHORT_YEAR_MONTH'])]['opp_id'].tolist()
-    print("list_opp's len : ",len(list_opp))
+def cohort_final_base_selection(df_complete_base_with_partner_filtered):
+    df_cohort = df_complete_base_with_partner_filtered[
+        df_complete_base_with_partner_filtered['year_month'] == COHORT_YEAR_MONTH]
+    print("df_cohort's shape: ", df_cohort.shape)
+    list_opp = df_complete_base_with_partner_filtered[
+        df_complete_base_with_partner_filtered['year_month'].isin([COHORT_YEAR_MONTH])]['opp_id'].tolist()
+    print("list_opp's len : ", len(list_opp))
     unique_list = list(set(list_opp))
-    print("unique_list_opp's len : ",len(unique_list))
+    print("unique_list_opp's len : ", len(unique_list))
 
-    dim_paren_opp=pd.DataFrame()
-    for id_subset in split(unique_list,100000):     
-        qry_opp_data = f"""select 
+    dim_paren_opp = pd.DataFrame()
+    for id_subset in split(unique_list, 100000):
+        qry_opp_data = f"""select
                             l.loan_id,l.parent_loan_id
-                            from  lms.dim_loan l 
+                            from  lms.dim_loan l
                             where l.loan_id in ({','.join([f"'{x}'" for x in id_subset])})
                         """
         df_id_temp = pd.read_sql(qry_opp_data, conn)
-        dim_paren_opp = pd.concat([dim_paren_opp,df_id_temp])  
-    print("dim_paren_opp.shape : ",dim_paren_opp.shape) 
-    dim_paren_opp['final_opp_id'] = np.where(dim_paren_opp['parent_loan_id'].isnull(),dim_paren_opp['loan_id'],dim_paren_opp['parent_loan_id'])
-    parent_opp_list = dim_paren_opp['final_opp_id'].tolist()      
-    print("parent_opp_list len : ",len(parent_opp_list))
+        dim_paren_opp = pd.concat([dim_paren_opp, df_id_temp])
+    print("dim_paren_opp.shape : ", dim_paren_opp.shape)
+    dim_paren_opp['final_opp_id'] = np.where(
+        dim_paren_opp['parent_loan_id'].isnull(),
+        dim_paren_opp['loan_id'],
+        dim_paren_opp['parent_loan_id'])
+    parent_opp_list = dim_paren_opp['final_opp_id'].tolist()
+    print("parent_opp_list len : ", len(parent_opp_list))
 
-
-    dim_lead=pd.DataFrame()
-    for id_subset in split(parent_opp_list,100000):     
+    dim_lead = pd.DataFrame()
+    for id_subset in split(parent_opp_list, 100000):
         qry_opp_data = f"""select dl.lead_id,
                             l.loan_id,l.parent_loan_id
                             from lms.dim_lead dl
@@ -330,15 +345,21 @@ def cohort_final_base_selection ():
                             where l.loan_id in ({','.join([f"'{x}'" for x in id_subset])})
                         """
         df_id_temp = pd.read_sql(qry_opp_data, conn)
-        dim_lead = pd.concat([dim_lead,df_id_temp])    
+        dim_lead = pd.concat([dim_lead, df_id_temp])
 
-    dim_lead.rename(columns = {'loan_id':'final_opp_id'},inplace = True)    
-    df_mapping = pd.merge(dim_lead[['lead_id','final_opp_id']],dim_paren_opp,on = 'final_opp_id')
-    df_mapping.to_csv('../Data/final_ids_opp_lead_mapping.csv',index = False)
+    dim_lead.rename(columns={'loan_id': 'final_opp_id'}, inplace=True)
+    df_mapping = pd.merge(dim_lead[['lead_id', 'final_opp_id']], dim_paren_opp, on='final_opp_id')
+    df_mapping.to_csv('../Data/final_ids_opp_lead_mapping.csv', index=False)
+
+    ##07_flag
+    df_cohort_with_lead = pd.merge(df_mapping, df_cohort, left_on='loan_id', right_on='opp_id')
+    print("final shape of df_cohort_with_lead : ", df_cohort_with_lead.shape)
+
+    return df_cohort_with_lead
 
 
-
-    df_updated_{"COHORT"} = df_updated_base_with_partner_filtered[df_updated_base_with_partner_filtered['year_month']=='COHORT_YEAR_MONTH']
-    df_{"COHORT"}_with_lead = pd.merge(df_mapping,df_updated_jan,left_on ='loan_id',right_on = 'opp_id')
-    print("final shape of df_{"COHORT"}_with_lead : ",df_{"COHORT"}_with_lead)
+if __name__ == '__main__':
+    df_complete_base, summary_df = pre_closed_opps()
+    df_complete_base_with_partner_filtered = partner_wise_distr(df_complete_base)
+    df_cohort_with_lead = cohort_final_base_selection(df_complete_base_with_partner_filtered)
 
