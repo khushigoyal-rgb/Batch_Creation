@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 from dateutil.relativedelta import relativedelta
@@ -30,6 +31,9 @@ EXCLUDED_STAGES = ['Canceled', 'Rejected', 'Disbursement Approved',
                    'Restructured', 'InitialApproach', 'Credit Approved']
 
 CHUNK_SIZE = 100000
+
+# Output directory for intermediate CSVs: Data folder inside base_selection/
+DATA_DIR = "Data"
 
 
 def connect_redshift(params):
@@ -101,7 +105,7 @@ def fetch_seed_ids(conn, dates):
     df_ids = df_opp.drop_duplicates(subset='opportunity__c', keep='first')
     print("df_opp_2.shape: ", df_ids.shape)
     df_ids.to_csv(
-        f"../Data/opp_ids_{dates['cohort_month_start']}_to_{dates['cohort_month_end']}.csv",
+        os.path.join(DATA_DIR, f"opp_ids_{dates['cohort_month_start']}_to_{dates['cohort_month_end']}.csv"),
         index=False)
 
     opp_unique_ids = df_ids['opportunity__c'].tolist()
@@ -136,7 +140,7 @@ def fetch_opp_data(conn, opp_unique_ids, dates):
         chunks.append(pd.read_sql(qry, conn))
 
     opp_df = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
-    opp_df.to_csv('../Data/opp_data_13aug26.csv', index=False)
+    opp_df.to_csv(os.path.join(DATA_DIR, 'opp_data_13aug26.csv'), index=False)
     return opp_df
 
 
@@ -161,7 +165,7 @@ def fetch_payment_data(conn, opp_unique_ids, dates):
         chunks.append(pd.read_sql(qry, conn))
 
     payment_df = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
-    payment_df.to_csv('../Data/payment_data_13aug26.csv', index=False)
+    payment_df.to_csv(os.path.join(DATA_DIR, 'payment_data_13aug26.csv'), index=False)
     return payment_df
 
 
@@ -238,7 +242,7 @@ def build_flags(opp_df, payment_df, dates):
     df_w_date['payment_number'] = df_w_date.groupby(['opp_id'])['date__c'].cumcount() + 1
     df_w_date['closedate'] = pd.to_datetime(df_w_date['closedate'])
     df_w_date['closedate'] = pd.to_datetime(df_w_date['closedate'], utc=True)
-    df_w_date.to_csv('../Data/df_opps_payments_final_w_date.csv')
+    df_w_date.to_csv(os.path.join(DATA_DIR, 'df_opps_payments_final_w_date.csv'))
 
     print("df_opps_payments_final_w_date.dtypes :", df_w_date.dtypes)
     df_w_date['max_dpd_till_now'] = (
@@ -309,7 +313,7 @@ def partner_wise_distr(df_complete_base, df_ids):
         df_complete_base_with_partner['partner_name'].isin(list_of_partners)]
     print("df_complete_base_with_partner_filtered.shape :", df_filtered.shape)
     print("checking partners counts :", df_filtered['partner_name'].value_counts())
-    df_filtered.to_csv('../Data/df_complete_base_with_partner_filtered.csv', index=False)
+    df_filtered.to_csv(os.path.join(DATA_DIR, 'df_complete_base_with_partner_filtered.csv'), index=False)
     print("df_complete_base_with_partner_filtered['pre_closed_flag'].value_counts() :",
           df_filtered['pre_closed_flag'].value_counts())
 
@@ -360,7 +364,7 @@ def cohort_final_base_selection(conn, df_complete_base_with_partner_filtered, da
 
     dim_lead.rename(columns={'loan_id': 'final_opp_id'}, inplace=True)
     df_mapping = pd.merge(dim_lead[['lead_id', 'final_opp_id']], dim_paren_opp, on='final_opp_id')
-    df_mapping.to_csv('../Data/final_ids_opp_lead_mapping.csv', index=False)
+    df_mapping.to_csv(os.path.join(DATA_DIR, 'final_ids_opp_lead_mapping.csv'), index=False)
 
     ## 07_flag
     df_cohort_with_lead = pd.merge(df_mapping, df_cohort, left_on='loan_id', right_on='opp_id')
@@ -375,6 +379,7 @@ def main():
     print("Previous Month:", (dates['today'] - relativedelta(months=1)).strftime('%b_%Y'))
     print(dates['today'])
 
+    os.makedirs(DATA_DIR, exist_ok=True)
     conn = connect_redshift(db_params)
 
     # Stage 1: seed IDs
