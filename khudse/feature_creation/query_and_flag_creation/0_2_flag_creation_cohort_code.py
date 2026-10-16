@@ -1,119 +1,39 @@
-import pandas as pd
-import numpy as np
+#!/usr/bin/env python
+# coding: utf-8
+"""
+Step 2: pre-closure QUERY FLAG creation.
+
+Reads the cohort case data (from 01_cohort_data_pull.py), keeps cases created in
+the 90 days AFTER the snapshot date, and flags loans whose cases match known
+pre-closure (qrc, type, sub_type, case_status, case_category) combinations.
+
+Output: one row per associated_loan with a preclosure_flag (0/1).
+Run from feature_creation/query_and_flag_creation/.
+"""
+
+import os
 from datetime import datetime
-
-
-
-
-
-df_data_jan26_ids = pd.read_csv('./data/dim_case_data_jan26_ids.csv')
-
-
-# In[5]:
-
-
-df_data_jan26_ids.head()
-
-
-# In[6]:
-
-
-df_data_jan26_ids.tail(10)
-
-
-# In[7]:
-
-
-snapshot_date_str = '2025-12-31'
-
-
-# In[8]:
-
-
-snap_date = pd.to_datetime(snapshot_date_str)
-max_date = snap_date + pd.Timedelta(days=90)
-print(max_date)
-
-df = df_data_jan26_ids.copy()
-df['createddate'] = pd.to_datetime(df['createddate'])
-df = df[df['createddate'] > snap_date]
-df = df[df['createddate'] <= max_date]
-
-
-
-# In[9]:
-
-
-df
-
-
-# In[10]:
-
-
-df.columns
-
-
-# In[11]:
-
-
-df[['case_category','qrc','type','sub_type','case_status']].drop_duplicates().to_clipboard()
-
-
-# In[12]:
-
-
-pd.DataFrame(df['case_category'].value_counts()).head(50)
-
-
-# In[13]:
-
-
-df['qrc'].value_counts()
-
-
-# In[14]:
-
-
-df['type'].value_counts()
-# ['Pre-closure Related','Loan Closure Request']
-
-
-# In[15]:
-
-
-df[df['type'].isin(['Pre-closure Related','Loan Closure Request'])]['qrc'].value_counts()
-
-
-# In[16]:
-
-
-df[df['type'].isin(['Pre-closure Related','Loan Closure Request'])]['sub_type'].value_counts()
-
-
-# In[17]:
-
-
-pd.DataFrame(df['sub_type'].value_counts()).head(50)
-['Loan Pre-closure Request','Loan Pre-closure']
-
-
-# In[18]:
-
-
-df[df['type'].isin(['Pre-closure Related','Loan Closure Request'])]['associated_loan'].nunique()
-
-
-# In[19]:
-
-
-df
-
-
-# In[20]:
-
-
-# Define the valid (qrc, type, sub_type, case_status, case_category) combinations
-preclosure_combos = [
+import pandas as pd
+
+# ---------------------------------------------------------------------------
+# Cohort (one knob) + paths (anchored to this script's location)
+# ---------------------------------------------------------------------------
+COHORT = "jan_26"
+_MON = {'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+        'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12}
+_ms, _yy = COHORT.split("_")
+_cohort_month = datetime(2000 + int(_yy), _MON[_ms[:3].lower()], 1)
+_COHORT_TAG = f"{_ms[:3].lower()}{_yy}"                         # e.g. "jan26"
+# snapshot = last day of the month before the cohort month, as %Y-%m-%d
+SNAPSHOT_DATE_STR = (_cohort_month - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
+_QFC_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(_QFC_DIR, "data")
+CASE_DATA_FILE = os.path.join(DATA_DIR, f"dim_case_data_{_COHORT_TAG}_ids.csv")
+FLAG_OUT = os.path.join(DATA_DIR, f"updated_{_COHORT_TAG}_customer_query_flag.csv")
+
+# Valid (qrc, type, sub_type, case_status, case_category) combos = pre-closure intent
+PRECLOSURE_COMBOS = [
     ('Request', 'Pre-closure Related', 'Loan Pre-closure Request', 'Closed', 'Preclosure Shared'),
     ('Request', 'Pre-closure Related', 'Loan Pre-closure Request', 'Closed', 'Not Elgible'),
     ('Request', 'Pre-closure Related', 'Loan Pre-closure Request', 'Closed', 'Not Contacted-Pre-closure shared'),
@@ -134,47 +54,54 @@ preclosure_combos = [
     ('Request', 'Pre-closure Related', 'Loan Pre-closure Request', 'Closed', 'Request In-progress'),
 ]
 
-combo_set = set(preclosure_combos)
 
-df['preclosure_flag'] = df[['qrc', 'type', 'sub_type', 'case_status', 'case_category']].apply(
-    lambda row: 1 if tuple(row) in combo_set else 0, axis=1
-)
+def main():
+    df_data = pd.read_csv(CASE_DATA_FILE)
+    print("case data shape:", df_data.shape)
+    print("head:\n", df_data.head())
+    print("tail:\n", df_data.tail(10))
 
-df['preclosure_flag'].value_counts()
+    snap_date = pd.to_datetime(SNAPSHOT_DATE_STR)
+    max_date = snap_date + pd.Timedelta(days=90)
+    print("snapshot:", SNAPSHOT_DATE_STR, "| max_date (snap+90d):", max_date)
+
+    df = df_data.copy()
+    df['createddate'] = pd.to_datetime(df['createddate'])
+    df = df[df['createddate'] > snap_date]
+    df = df[df['createddate'] <= max_date]
+    print("cases in (snap, snap+90d] window:", df.shape)
+
+    print("columns:", list(df.columns))
+    # NOTE: the original notebook copied this to clipboard for manual review;
+    # not available in a headless script -> left for reference.
+    # df[['case_category','qrc','type','sub_type','case_status']].drop_duplicates().to_clipboard()
+    print("case_category value_counts (top 50):\n",
+          pd.DataFrame(df['case_category'].value_counts()).head(50))
+    print("qrc value_counts:\n", df['qrc'].value_counts())
+    print("type value_counts:\n", df['type'].value_counts())
+
+    _closure = df[df['type'].isin(['Pre-closure Related', 'Loan Closure Request'])]
+    print("closure-type qrc value_counts:\n", _closure['qrc'].value_counts())
+    print("closure-type sub_type value_counts:\n", _closure['sub_type'].value_counts())
+    print("sub_type value_counts (top 50):\n",
+          pd.DataFrame(df['sub_type'].value_counts()).head(50))
+    print("closure-type associated_loan nunique:", _closure['associated_loan'].nunique())
+
+    combo_set = set(PRECLOSURE_COMBOS)
+    df['preclosure_flag'] = df[['qrc', 'type', 'sub_type', 'case_status', 'case_category']].apply(
+        lambda row: 1 if tuple(row) in combo_set else 0, axis=1
+    )
+    print("preclosure_flag value_counts:\n", df['preclosure_flag'].value_counts())
+
+    df_2 = df[['associated_loan', 'preclosure_flag']].drop_duplicates().reset_index(drop=True)
+    print("df_2 shape:", df_2.shape)
+
+    df_2_non_null = df_2[df_2['associated_loan'].notnull()]
+    df_2_non_null.to_csv(FLAG_OUT, index=False)
+    print("wrote:", FLAG_OUT, "| rows:", df_2_non_null.shape[0])
+
+    return df_2_non_null
 
 
-# In[21]:
-
-
-df
-
-
-# In[22]:
-
-
-df_2 = df[['associated_loan','preclosure_flag']].drop_duplicates().reset_index(drop=True)
-
-
-# In[23]:
-
-
-df_2
-
-
-# In[24]:
-
-
-df_2[df_2['associated_loan'].notnull()]
-
-
-# In[25]:
-
-
-df_2[df_2['associated_loan'].notnull()].to_csv('./data/updated_jan26_customer_query_flag.csv',index = False)
-
-
-# In[ ]:
-
-
-
-
+if __name__ == '__main__':
+    main()

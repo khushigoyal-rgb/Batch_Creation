@@ -1,122 +1,81 @@
 #!/usr/bin/env python
 # coding: utf-8
+"""
+Step 3: pre-closure QUERY FEATURE creation.
 
-# In[1]:
+Reads the cohort case data (from 01_cohort_data_pull.py) and a frozen category
+map (categories.json), then engineers a wide per-loan feature table of
+customer-service case behaviour BEFORE the snapshot date: numerical stats
+(case age, reply count), categorical volume/mix/recency/friction across time
+windows, meta diversity/loop features, and velocity ratios.
 
+Output: ./data/updated_<cohort>_customer_query_features.csv
+Run from feature_creation/query_and_flag_creation/.
+"""
 
-import pandas as pd
-import numpy as np
-from datetime import datetime
-
-
-# In[2]:
-
-
-pd.set_option('display.max_columns',None)
-
-
-# In[3]:
-
-
-#!ls ./data/
-
-
-# In[4]:
-
-
-df_data_jan26_ids = pd.read_csv('./data/dim_case_data_jan26_ids.csv')
-
-
-# In[5]:
-
-
-df_data_jan26_ids.head()
-
-
-# In[6]:
-
-
-df_data_jan26_ids.tail(10)
-
-
-# In[7]:
-
-
-# import pandas as pd
+import os
 import json
+from datetime import datetime
+import gc
+import numpy as np
+import pandas as pd
 
-# # 1. Configuration
+pd.set_option('display.max_columns', None)
+
+
+# ---------------------------------------------------------------------------
+# Cohort (one knob) + paths (anchored to this script's location)
+# ---------------------------------------------------------------------------
+COHORT = "jan_26"
+_MON = {'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+        'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12}
+_ms, _yy = COHORT.split("_")
+_cohort_month = datetime(2000 + int(_yy), _MON[_ms[:3].lower()], 1)
+_COHORT_TAG = f"{_ms[:3].lower()}{_yy}"                          # e.g. "jan26"
+# snapshot = last day of the month before the cohort month, as %Y-%m-%d
+SNAPSHOT_DATE_STR = (_cohort_month - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
+_QFC_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(_QFC_DIR, "data")
+CATEGORIES_JSON = os.path.join(_QFC_DIR, "categories.json")
+CASE_DATA_FILE = os.path.join(DATA_DIR, f"dim_case_data_{_COHORT_TAG}_ids.csv")
+FEATURES_OUT = os.path.join(DATA_DIR, f"updated_{_COHORT_TAG}_customer_query_features.csv")
+
+os.makedirs(DATA_DIR, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# NOTE: categories.json is produced ONCE by the (commented) anchor-map builder
+# below. It freezes which category values are kept per facet (>20 unique ->
+# keep those with >= THRESHOLD records + "Miscellaneous"; else keep all).
+# Re-run this block only when you need to regenerate categories.json.
+# ---------------------------------------------------------------------------
 # THRESHOLD = 10000
-# # Facets to include (Subject is excluded per instructions)
 # facets = ['qrc', 'case_origin', 'closure_remarks', 'type', 'sub_type', 'case_category']
-
+#
 # def create_anchor_map(df_input, facet_list, threshold_val):
 #     anchor_map = {}
-
-#     # We work on a copy of the columns to avoid changing the original df yet
 #     temp_df = df_input[facet_list].copy()
-
 #     print(f"Analyzing {len(temp_df)} records to freeze the mapping...")
-
 #     for col in facet_list:
-#         # A. Normalization: Merge Miscellaneous1 into Miscellaneous
 #         temp_df[col] = temp_df[col].replace('Miscellaneous1', 'Miscellaneous')
-
-#         # B. Check Unique Count
 #         unique_vals = temp_df[col].nunique()
-
 #         if unique_vals > 20:
-#             # Rule: > 20 unique? Keep only those with >= 10,000 records
 #             counts = temp_df[col].value_counts()
 #             retained = counts[counts >= threshold_val].index.tolist()
-
-#             # Ensure 'Miscellaneous' is explicitly in the list
 #             if "Miscellaneous" not in retained:
 #                 retained.append("Miscellaneous")
-
 #             anchor_map[col] = retained
-#             print(f"Facet '{col}': {unique_vals} unique found. Retained {len(retained)} categories (Threshold >= 10k).")
 #         else:
-#             # Rule: <= 20 unique? Keep all original categories
-#             retained = temp_df[col].unique().tolist()
-#             anchor_map[col] = retained
-#             print(f"Facet '{col}': {unique_vals} unique found. Retained all (Count <= 20).")
-
+#             anchor_map[col] = temp_df[col].unique().tolist()
 #     return anchor_map
-
-# # Execute
+#
 # FINAL_CATEGORIES_MAP = create_anchor_map(df_data_jan26_ids, facets, THRESHOLD)
-
-# # 2. Review and Save
-# print("\n--- FINAL ANCHOR MAP ---")
-# for facet, cats in FINAL_CATEGORIES_MAP.items():
-#     print(f"{facet}: {cats}")
-
-# with open("categories.json", "w") as f:
+# with open(CATEGORIES_JSON, "w") as f:
 #     json.dump(FINAL_CATEGORIES_MAP, f, indent=4)
 
 
-# In[8]:
-
-
-with open('categories.json', 'r') as f:
-    FINAL_CATEGORIES_MAP = json.load(f)
-
-
-# In[ ]:
-
-
-
-
-
-# In[9]:
-
-
-import pandas as pd
-import numpy as np
-import gc
-
-def create_preclosure_features_v4(df_input, snapshot_date_str):
+def create_preclosure_features_v4(df_input, snapshot_date_str, FINAL_CATEGORIES_MAP):
     # --- 1. SETUP & LEAKAGE CONTROL ---
     snap_date = pd.to_datetime(snapshot_date_str)
     print(f"Engineering features for snapshot: {snapshot_date_str}")
@@ -137,7 +96,7 @@ def create_preclosure_features_v4(df_input, snapshot_date_str):
     master_features = pd.DataFrame(index=loans)
     master_features.index.name = 'loan_number'
 
-    windows = { "7d": 7, "30d": 30, "60d": 60, "90d": 90, "180d": 180 }
+    windows = {"7d": 7, "30d": 30, "60d": 60, "90d": 90, "180d": 180}
     ratio_pairs = [("7d", "30d"), ("30d", "60d"), ("30d", "90d"), ("30d", "180d"), ("60d", "180d"), ("90d", "180d")]
 
     # --- 2. NUMERICAL ROOTS (Mean & Max) ---
@@ -235,54 +194,33 @@ def create_preclosure_features_v4(df_input, snapshot_date_str):
     return master_features.fillna(0).astype('float32')
 
 
-# In[10]:
+def main():
+    df_data = pd.read_csv(CASE_DATA_FILE)
+    print("case data shape:", df_data.shape)
+    print("head:\n", df_data.head())
+    print("tail:\n", df_data.tail(10))
+
+    if not os.path.exists(CATEGORIES_JSON):
+        raise SystemExit(
+            f"categories.json not found at {CATEGORIES_JSON}\n"
+            "It is the frozen category vocabulary this step needs. Generate it ONCE "
+            "(then reuse across cohorts) with:\n"
+            "    python make_categories_json.py\n"
+            "or anchor on a specific reference file:\n"
+            "    python make_categories_json.py --input <case_data.csv> --threshold 10000")
+    with open(CATEGORIES_JSON, 'r') as f:
+        FINAL_CATEGORIES_MAP = json.load(f)
+    print("loaded categories.json facets:", list(FINAL_CATEGORIES_MAP.keys()))
+
+    master_features_final = create_preclosure_features_v4(
+        df_data, SNAPSHOT_DATE_STR, FINAL_CATEGORIES_MAP)
+    print("master_features_final shape:", master_features_final.shape)
+
+    master_features_final.to_csv(FEATURES_OUT)
+    print("wrote:", FEATURES_OUT)
+
+    return master_features_final
 
 
-master_features_final = create_preclosure_features_v4(df_data_jan26_ids, '2025-12-31')
-
-
-# In[11]:
-
-
-master_features_final
-
-
-# In[ ]:
-
-
-master_features_final.to_csv('./data/updated_jan26_customer_query_features.csv')
-
-
-# In[ ]:
-
-
-#vel_type_noc_related_30d_90d
-#vel_case_category_miscellaneous_30d_180d
-#ratio_case_age_in_days_60d_180d
-#vel_type_pre-closure_related_60d_180d
-#vel_closure_remarks_closed_with_failure_30d_180d
-
-
-# In[ ]:
-
-
-master_features_final['vel_type_noc_related_30d_90d'].describe(percentiles=[.1,.2,.7,.9,.99])
-
-
-# In[ ]:
-
-
-master_features_final['ratio_case_age_in_days_60d_180d'].describe(percentiles=[.1,.2,.7,.9,.99])
-
-
-# In[ ]:
-
-
-master_features_final['ratio_case_age_in_days_60d_180d'].nunique()
-
-
-# In[ ]:
-
-
-#86155
-
+if __name__ == '__main__':
+    main()
